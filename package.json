@@ -1,0 +1,18 @@
+{
+  "name": "midway-version",
+  "version": "1.0.0",
+  "description": "Check your midway and component version is matched",
+  "main": "index.js",
+  "bin": {
+    "midway-version": "bin/midway-version.js"
+  },
+  "dependencies": {
+    "@midwayjs/version": "^3.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/midwayjs/midway-version.git"
+  },
+  "author": "czy88840616 <czy88840616@gmail.com>",
+  "license": "MIT"
+}
