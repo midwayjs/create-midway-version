@@ -41,7 +41,7 @@ function checkUpdate(coreVersion) {
     console.log('*'.repeat(50));
     if (isNpxRun) {
       console.log(
-        `>> Current version is too old, please remove dir "${join(__dirname, '../../')}" by yourself and re-run the command.`
+        `>> Current version is too old, please run "npx clear-npx-cache" by yourself and re-run the command.`
       );
     } else {
       console.log(
@@ -55,7 +55,7 @@ function checkUpdate(coreVersion) {
   return true;
 }
 
-exports.check = function () {
+exports.check = function (options = {}) {
   const decoratorVersion = getVersion('@midwayjs/decorator') || '3.7.0';
   const coreVersion = getVersion('@midwayjs/core');
 
@@ -101,12 +101,14 @@ exports.check = function () {
     }
 
     if (versions[pkgName].indexOf(version) !== -1 ) {
-      // ok
-      console.info(`\x1B[32m✓\x1B[0m ${pkgName}(${version})`);
+      if (options.hiddenSuccess) {
+        // ok
+        console.info(`\x1B[32m✓\x1B[0m ${pkgName}(${version})`);
+      }
     } else {
       // fail
       fail++;
-      console.error(`\x1B[31m✖\x1B[0m ${pkgName}(${version})`);
+      console.error(`\x1B[31m✖\x1B[0m ${pkgName}(current: ${version}, allow: ${JSON.stringify(versions[pkgName])})`);
     }
   }
 
