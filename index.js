@@ -91,6 +91,7 @@ exports.check = function (outputConsole = false) {
       `>> Current version @midwayjs/decorator(${decoratorVersion}) and @midwayjs/core(${coreVersion}) not found in @midwayjs/version, please check it.`
     );
     logger('log', '*'.repeat(50));
+    return;
   }
 
   const text = readFileSync(versionFile, 'utf-8');
@@ -100,7 +101,7 @@ exports.check = function (outputConsole = false) {
 
   const pkgList = Object.keys(versions);
   for (const pkgName of pkgList) {
-    const version = getVersion(pkgName);1
+    const version = getVersion(pkgName);
     if (!version) {
       logger('info', `\x1B[32m✓\x1B[0m ${pkgName}(not installed)`);
       continue;
@@ -115,7 +116,7 @@ exports.check = function (outputConsole = false) {
       result.push({
         name: pkgName,
         current: version,
-        allow: version[pkgName],
+        allow: versions[pkgName],
       });
       logger('error', `\x1B[31m✖\x1B[0m ${pkgName}(current: ${version}, allow: ${JSON.stringify(versions[pkgName])})`);
     }
