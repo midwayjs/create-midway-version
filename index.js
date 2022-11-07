@@ -67,7 +67,7 @@ exports.check = function (outputConsole = false) {
 
   if (!coreVersion) {
     logger('log', '*'.repeat(50));
-    logger('level', '>> Please install @midwayjs/core first');
+    logger('error', '>> Please install @midwayjs/core first');
     logger('log', '*'.repeat(50));
     return;
   }
@@ -87,7 +87,7 @@ exports.check = function (outputConsole = false) {
 
   if (!existsSync(versionFile)) {
     logger('log', '*'.repeat(50));
-    logger('level', 
+    logger('error', 
       `>> Current version @midwayjs/decorator(${decoratorVersion}) and @midwayjs/core(${coreVersion}) not found in @midwayjs/version, please check it.`
     );
     logger('log', '*'.repeat(50));
@@ -100,17 +100,15 @@ exports.check = function (outputConsole = false) {
 
   const pkgList = Object.keys(versions);
   for (const pkgName of pkgList) {
-    const version = getVersion(pkgName);
+    const version = getVersion(pkgName);1
     if (!version) {
-      console.info(`\x1B[32m✓\x1B[0m ${pkgName}(not installed)`);
+      logger('info', `\x1B[32m✓\x1B[0m ${pkgName}(not installed)`);
       continue;
     }
 
     if (versions[pkgName].indexOf(version) !== -1 ) {
-      if (options.hiddenSuccess) {
-        // ok
-        console.info(`\x1B[32m✓\x1B[0m ${pkgName}(${version})`);
-      }
+      // ok
+      logger('info', `\x1B[32m✓\x1B[0m ${pkgName}(${version})`);
     } else {
       // fail
       fail++;
@@ -119,7 +117,7 @@ exports.check = function (outputConsole = false) {
         current: version,
         allow: version[pkgName],
       });
-      logger('level', `\x1B[31m✖\x1B[0m ${pkgName}(current: ${version}, allow: ${JSON.stringify(versions[pkgName])})`);
+      logger('error', `\x1B[31m✖\x1B[0m ${pkgName}(current: ${version}, allow: ${JSON.stringify(versions[pkgName])})`);
     }
   }
 
