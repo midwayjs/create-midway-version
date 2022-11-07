@@ -2,4 +2,4 @@
 'use strict';
 
 const { check } = require('../');
-check();
+check(true);

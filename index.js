@@ -38,31 +38,37 @@ function checkUpdate(coreVersion) {
   const midwayVersionPkgVersion = getVersion('@midwayjs/version', false);
   // compare coreVersion and midwayVersionPkgVersion with semver version
   if (compareVersion(coreVersion, midwayVersionPkgVersion) > 0) {
-    console.log('*'.repeat(50));
+    logger('log', '*'.repeat(50));
     if (isNpxRun) {
-      console.log(
+      logger('log', 
         `>> Current version is too old, please run "npx clear-npx-cache" by yourself and re-run the command.`
       );
     } else {
-      console.log(
+      logger('log', 
         `>> Current version is too old, please upgrade dependencies and re-run the command.`
       );
     }
 
-    console.log('*'.repeat(50));
+    logger('log', '*'.repeat(50));
     return false;
   }
   return true;
 }
 
-exports.check = function (options = {}) {
+exports.check = function (outputConsole = false) {
+  function logger(level, msg) {
+    if (outputConsole) {
+      console[level](msg);
+    }
+  }
   const decoratorVersion = getVersion('@midwayjs/decorator') || '3.7.0';
   const coreVersion = getVersion('@midwayjs/core');
+  const result = [];
 
   if (!coreVersion) {
-    console.log('*'.repeat(50));
-    console.error('>> Please install @midwayjs/core first');
-    console.log('*'.repeat(50));
+    logger('log', '*'.repeat(50));
+    logger('level', '>> Please install @midwayjs/core first');
+    logger('log', '*'.repeat(50));
     return;
   }
 
@@ -80,17 +86,17 @@ exports.check = function (options = {}) {
   );
 
   if (!existsSync(versionFile)) {
-    console.log('*'.repeat(50));
-    console.error(
+    logger('log', '*'.repeat(50));
+    logger('level', 
       `>> Current version @midwayjs/decorator(${decoratorVersion}) and @midwayjs/core(${coreVersion}) not found in @midwayjs/version, please check it.`
     );
-    console.log('*'.repeat(50));
+    logger('log', '*'.repeat(50));
   }
 
   const text = readFileSync(versionFile, 'utf-8');
   const versions = JSON.parse(text);
   let fail = 0;
-  console.log('>> Start to check your midway component version...\n');
+  logger('log', '>> Start to check your midway component version...\n');
 
   const pkgList = Object.keys(versions);
   for (const pkgName of pkgList) {
@@ -108,16 +114,23 @@ exports.check = function (options = {}) {
     } else {
       // fail
       fail++;
-      console.error(`\x1B[31m✖\x1B[0m ${pkgName}(current: ${version}, allow: ${JSON.stringify(versions[pkgName])})`);
+      result.push({
+        name: pkgName,
+        current: version,
+        allow: version[pkgName],
+      });
+      logger('level', `\x1B[31m✖\x1B[0m ${pkgName}(current: ${version}, allow: ${JSON.stringify(versions[pkgName])})`);
     }
   }
 
-  console.log('*'.repeat(50));
+  logger('log', '*'.repeat(50));
   if (fail > 0) {
-    console.log(`>> Check complete, found \x1B[41m${fail}\x1B[0m problem.`);
-    console.log(`>> Please check the result above.`);
+    logger('log', `>> Check complete, found \x1B[41m${fail}\x1B[0m problem.`);
+    logger('log', `>> Please check the result above.`);
   } else {
-    console.log(`>> Check complete, all versions are healthy.`);
+    logger('log', `>> Check complete, all versions are healthy.`);
   }
-  console.log('*'.repeat(50));
+  logger('log', '*'.repeat(50));
+
+  return result;
 }
