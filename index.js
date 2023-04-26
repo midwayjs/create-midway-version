@@ -33,28 +33,6 @@ function getVersion(pkgName, resolveMode = true) {
   }
 }
 
-function checkUpdate(coreVersion) {
-  // save version to current dir
-  const midwayVersionPkgVersion = getVersion('@midwayjs/version', false);
-  // compare coreVersion and midwayVersionPkgVersion with semver version
-  if (compareVersion(coreVersion, midwayVersionPkgVersion) > 0) {
-    logger('log', '*'.repeat(50));
-    if (isNpxRun) {
-      logger('log', 
-        `>> Current version is too old, please run "npx clear-npx-cache" by yourself and re-run the command.`
-      );
-    } else {
-      logger('log', 
-        `>> Current version is too old, please upgrade dependencies and re-run the command.`
-      );
-    }
-
-    logger('log', '*'.repeat(50));
-    return false;
-  }
-  return true;
-}
-
 exports.check = function (outputConsole = false) {
   function logger(level, msg) {
     if (outputConsole) {
@@ -70,6 +48,28 @@ exports.check = function (outputConsole = false) {
     logger('error', '>> Please install @midwayjs/core first');
     logger('log', '*'.repeat(50));
     return;
+  }
+
+  function checkUpdate(coreVersion) {
+    // save version to current dir
+    const midwayVersionPkgVersion = getVersion('@midwayjs/version', false);
+    // compare coreVersion and midwayVersionPkgVersion with semver version
+    if (compareVersion(coreVersion, midwayVersionPkgVersion) > 0) {
+      logger('log', '*'.repeat(50));
+      if (isNpxRun) {
+        logger('log', 
+          `>> Current version is too old, please run "npx clear-npx-cache" by yourself and re-run the command.`
+        );
+      } else {
+        logger('log', 
+          `>> Current version is too old, please upgrade dependencies and re-run the command.`
+        );
+      }
+  
+      logger('log', '*'.repeat(50));
+      return false;
+    }
+    return true;
   }
 
   const baseDir = dirname(require.resolve('@midwayjs/version'));
