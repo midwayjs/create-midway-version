@@ -6,9 +6,10 @@
   "bin": {
     "midway-version": "bin/midway-version.js"
   },
-  "dependencies": {
-    "@midwayjs/version": "^3.0.0"
-  },
+  "files": [
+    "bin",
+    "index.js"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/midwayjs/midway-version.git"
