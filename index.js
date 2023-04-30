@@ -1,13 +1,13 @@
 'use strict';
 
-const { existsSync, readFileSync, mkdirSync } = require('fs');
+const { existsSync, readFileSync, mkdirSync, writeFileSync } = require('fs');
 const { dirname, join } = require('path');
 const { execSync } = require('child_process');
-const outputConsole = false;
 const { debuglog: Debuglog } = require('util');
 const debugLogger = Debuglog('version');
 const currentProjectRoot = process.cwd();
 const isNpxRun = __dirname.indexOf(currentProjectRoot === -1);
+let outputConsole = false;
 
 function logger(level, msg) {
   if (outputConsole) {
@@ -64,10 +64,11 @@ function compareVersion(v1, v2) {
   return 0;
 }
 
-function getVersion(pkgName, resolveMode = true) {
+function getVersion(pkgName, resolveMode = true, options = {}) {
+  options.cwd = options.cwd || currentProjectRoot;
   try {
     if (resolveMode) {
-      return require(join(currentProjectRoot, 'node_modules', `${pkgName}/package.json`)).version;
+      return require(join(options.cwd, 'node_modules', `${pkgName}/package.json`)).version;
     } else {
       return require(`${pkgName}/package.json`).version;
     }
@@ -75,105 +76,9 @@ function getVersion(pkgName, resolveMode = true) {
     return undefined;
   }
 }
-// 下载最新的包到 node_modules
-async function getLatestPackage(templateUri) {
-  let data = runCmd(`npm view ${templateUri} dist-tags --json`);
-  const remoteVersion = JSON.parse(data)['latest'];
-
-  function checkoutVersionEquals() {
-    const midwayVersionPkgVersion = getVersion('@midwayjs/version');
-    return midwayVersionPkgVersion === remoteVersion;
-  }
-
-  if (!checkoutVersionEquals()) {
-    // 如果 node_modules 不存在，则建一个
-    if (!existsSync(join(currentProjectRoot, 'node_modules'))) {
-      mkdirSync(join(currentProjectRoot, 'node_modules'));
-    }
-    // 如果版本不同，则需要重新安装
-    runCmd(`npm pack @midwayjs/version --pack-destination=${join(currentProjectRoot, 'node_modules')}`);
-    // 用 install 安装 zip 包
-    runCmd(`npm install --no-save --no-package-lock ${join(currentProjectRoot, 'node_modules', `midwayjs-version-${remoteVersion}.tgz`)}`, currentProjectRoot);
-
-    if (!checkoutVersionEquals()) {
-      outputError('@midwayjs/version install error and version is not equals');
-    }
-    // clean template directory first
-    if (dirExistsSync(join(this.tmpPath, this.pkgRootName))) {
-      await fse.remove(join(this.tmpPath, this.pkgRootName));
-    }
-    const cmd = `${this.npmClient} pack ${this.templateUri}@${remoteVersion} ${this.registryUrl}&& mkdir ${this.pkgRootName}`;
-    const backupCmd = `npm pack ${this.templateUri}@${remoteVersion} && mkdir ${this.pkgRootName}`;
-    debugLogger('download cmd = [%s]', cmd);
-
-    // run download
-
-    try {
-      execSync(cmd, {
-        cwd: this.tmpPath,
-        stdio: ['pipe', 'ignore', 'pipe'],
-      });
-    } catch (err) {
-      failOnce = true;
-      console.warn(
-        `[Generator]: "${cmd}" download template failed and try with npm`
-      );
-      debugLogger(`err = ${err.message}`);
-      // 兜底使用 npm 下载模板
-      execSync(backupCmd, {
-        cwd: this.tmpPath,
-        stdio: ['pipe', 'ignore', 'pipe'],
-      });
-    }
-    // 解压包
-    await tar.x({
-      file: join(this.tmpPath, `${this.pkgRootName}.tgz`),
-      C: join(this.tmpPath, this.pkgRootName),
-    });
-
-    if (!dirExistsSync(currentPkgRoot)) {
-      throw new Error(`${currentPkgRoot} package download error`);
-    }
-
-    // 标记模板包下载成功
-    await fse.writeFile(join(currentPkgRoot, '.success'), 'complete');
-
-    // 这里的依赖是模板的依赖，并非项目的依赖
-    if (
-      this.npmInstall &&
-      fse.existsSync(join(currentPkgRoot, 'package.json'))
-    ) {
-      const pkg = require(join(currentPkgRoot, 'package.json'));
-      if (pkg['dependencies']) {
-        debugLogger('find package.json and dependencies');
-        let installCmd = `${this.npmClient} ${this.registryUrl} install --production`;
-        if (failOnce) {
-          installCmd = 'npm install --production';
-        }
-        execSync(installCmd, {
-          cwd: currentPkgRoot,
-          stdio: ['pipe', 'ignore', 'pipe'],
-        });
-        debugLogger('install dependencies complete');
-      }
-    }
-
-    if (failOnce) {
-      console.warn(
-        '[Generator]: Code directory has created and dependencies may be not complete installed.'
-      );
-      console.warn(
-        '[Generator]: Please enter the code directory and run "npm install" manually after remove node_modules and lock file.'
-      );
-      console.warn(
-        '[Generator]: Please ignore the prompt for correct output'
-      );
-    }
-  }
-}
 
 // 普通检查包依赖的版本是否错误
-function checkVersion() {
+function checkVersion(coreVersion) {
   const baseDir = dirname(require.resolve('@midwayjs/version'));
   const decoratorVersion = getVersion('@midwayjs/decorator') || '3.7.0';
   const result = [];
@@ -236,20 +141,50 @@ function checkVersion() {
   return result;
 }
 
+// 下载最新的包到 node_modules
+function getLatestPackage(templateUri, baseDir) {
+  let data = runCmd(`npm view ${templateUri} dist-tags --json`);
+  const remoteVersion = JSON.parse(data)['latest'];
+
+  function checkoutVersionEquals() {
+    const midwayVersionPkgVersion = getVersion('@midwayjs/version', true, {
+      cwd: baseDir,
+    });
+    return midwayVersionPkgVersion === remoteVersion;
+  }
+
+  if (!checkoutVersionEquals()) {
+    // 如果 node_modules 不存在，则建一个
+    if (!existsSync(join(baseDir, 'node_modules'))) {
+      mkdirSync(join(baseDir, 'node_modules'));
+    }
+    // 如果版本不同，则需要重新安装
+    runCmd(`npm pack @midwayjs/version --quiet --pack-destination=${join(baseDir, 'node_modules')}`);
+    // 用 install 安装 zip 包
+    runCmd(`npm install --quiet --no-save --no-package-lock ${join(baseDir, 'node_modules', `midwayjs-version-${remoteVersion}.tgz`)}`, baseDir);
+
+    if (!checkoutVersionEquals()) {
+      outputError('@midwayjs/version install error and version is not equals');
+    }
+  }
+}
+
 // 检查包是否可以更新到最新版本
-exports.checkPackageUpdate = async function checkPackageUpdate(writeUpdate = false) {
+function checkPackageUpdate(writeUpdate = false) {
   if (!existsSync(join(currentProjectRoot, 'package.json'))) {
     outputError('>> Package.json not found in current cwd, please check it.');
     return;
   }
-  
-  await getLatestPackage('@midwayjs/version');
 
-  const baseDir = dirname(require.resolve('@midwayjs/version'));
+  const baseDir = join(dirname(require.resolve('@midwayjs/version')), '../../../');
+  const versionBaseDir = dirname(require.resolve('@midwayjs/version'));
+  
+  getLatestPackage('@midwayjs/version', baseDir);
+
   const {decorator: decoratorVersion, core: coreVersion} = require('@midwayjs/version');
   const result = [];
   const versionFile = join(
-    baseDir,
+    versionBaseDir,
     `versions/${decoratorVersion.replace(/\./g, '_')}-${coreVersion.replace(
       /\./g,
       '_'
@@ -278,7 +213,6 @@ exports.checkPackageUpdate = async function checkPackageUpdate(writeUpdate = fal
   for (const pkgName of pkgList) {
     const version = getVersion(pkgName);
     if (!version) {
-      logger('info', `\x1B[32m✓\x1B[0m ${pkgName}(not installed)`);
       continue;
     }
 
@@ -287,8 +221,7 @@ exports.checkPackageUpdate = async function checkPackageUpdate(writeUpdate = fal
     const latestVersion = versions[pkgName].pop();
 
     if (latestVersion === version) {
-      // ok
-      logger('info', `\x1B[32m✓\x1B[0m ${pkgName}(${version})`);
+      // ignore
     } else {
       // fail
       fail++;
@@ -297,7 +230,7 @@ exports.checkPackageUpdate = async function checkPackageUpdate(writeUpdate = fal
         current: version,
         latestVersion,
       });
-      logger('error', `\x1B[31m✖\x1B[0m ${pkgName}(${version} => ${latestVersion})`);
+      logger('error', `\x1b[33m▫️\x1B[0m ${pkgName.padEnd(40, ' ')}${version.padEnd(8, ' ')} => ${latestVersion}`);
     }
   }
 
@@ -308,24 +241,24 @@ exports.checkPackageUpdate = async function checkPackageUpdate(writeUpdate = fal
         if (pkgJSON['dependencies'][pkg.name]) {
           pkgJSON['dependencies'][pkg.name] = getReplacedDepenciesVersion(pkgJSON['dependencies'][pkg.name], pkg.latestVersion);
         } else if (pkgJSON['devDependencies'][pkg.name]) {
-          pkgJSON['devDependencies'][pkg.name] = getReplacedDepenciesVersion(pkgJSON['dependencies'][pkg.name], pkg.latestVersion);
+          pkgJSON['devDependencies'][pkg.name] = getReplacedDepenciesVersion(pkgJSON['devDependencies'][pkg.name], pkg.latestVersion);
         }
       }
       // 写入 package.json
       writeFileSync(join(currentProjectRoot, 'package.json'), JSON.stringify(pkgJSON, null, 2));
-      logger('log', '*'.repeat(50));
+      logger('log', '*'.repeat(60));
       logger('log', `>> Write complete, please re-run install command.`);
-      logger('log', '*'.repeat(50));
+      logger('log', '*'.repeat(60));
     }
   } else {
-    logger('log', '*'.repeat(50));
+    logger('log', '*'.repeat(60));
     if (fail > 0) {
       logger('log', `>> Check complete, found \x1B[41m${fail}\x1B[0m package can be update.`);
       logger('log', `>> Please check the result above.`);
     } else {
       logger('log', `>> Check complete, all versions are healthy.`);
     }
-    logger('log', '*'.repeat(50));
+    logger('log', '*'.repeat(60));
   
   }
 
@@ -371,7 +304,8 @@ exports.check = function (output = false) {
   if (process.argv.includes('-u')) {
     checkPackageUpdate(process.argv.includes('-w'));
   } else {
-    return checkVersion();
+    return checkVersion(coreVersion);
   }
-
 }
+
+exports.checkPackageUpdate = checkPackageUpdate;
