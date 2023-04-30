@@ -249,6 +249,10 @@ function checkPackageUpdate(writeUpdate = false) {
       logger('log', '*'.repeat(60));
       logger('log', `>> Write complete, please re-run install command.`);
       logger('log', '*'.repeat(60));
+    } else {
+      logger('log', '*'.repeat(60));
+      logger('log', `>> Check complete, all versions are healthy.`);
+      logger('log', '*'.repeat(60));
     }
   } else {
     logger('log', '*'.repeat(60));
