@@ -7,7 +7,8 @@
     "midway-version": "bin/midway-version.js"
   },
   "dependencies": {
-    "@midwayjs/version": "^3.0.0"
+    "@midwayjs/version": "^3.0.0",
+    "compare-versions": "^6.0.0"
   },
   "files": [
     "bin",
