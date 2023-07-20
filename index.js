@@ -259,8 +259,10 @@ function checkPackageUpdate(writeUpdate = false, externalVersions = {}) {
 
   if (writeUpdate) {
     if (result.length > 0) {
+      const pkgVersion = [];
       // 循环 pkg，设置依赖版本
       for (const pkg of result) {
+        pkgVersion.push(`${pkg.name}@${pkg.latestVersion}`);
         if (pkgJSON['dependencies'][pkg.name]) {
           pkgJSON['dependencies'][pkg.name] = getReplacedDepenciesVersion(
             pkgJSON['dependencies'][pkg.name],
@@ -278,9 +280,17 @@ function checkPackageUpdate(writeUpdate = false, externalVersions = {}) {
         join(currentProjectRoot, 'package.json'),
         JSON.stringify(pkgJSON, null, 2)
       );
-      logger('log', '*'.repeat(60));
-      logger('log', `>> Write complete, please re-run install command.`);
-      logger('log', '*'.repeat(60));
+      if (existsSync(join(currentProjectRoot, 'package-lock.json'))) {
+        // 更新 package-lock.json
+        runCmd(`npm install ${pkgVersion.join(' ')} --package-lock-only`, currentProjectRoot);
+        logger('log', '*'.repeat(60));
+        logger('log', `>> Write package.json and package-lock.json complete, please re-run install command.`);
+        logger('log', '*'.repeat(60));
+      } else {
+        logger('log', '*'.repeat(60));
+        logger('log', `>> Write complete, please re-run install command.`);
+        logger('log', '*'.repeat(60));
+      }
     } else {
       logger('log', '*'.repeat(60));
       logger('log', `>> Check complete, all versions are healthy.`);
