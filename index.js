@@ -44,6 +44,13 @@ function getReplacedDepenciesVersion(pkgVersion, targetVersion) {
   return targetVersion;
 }
 
+function filterVersionPrefix(version) {
+  if (version.startsWith('^') || version.startsWith('~')) {
+    return version.slice(1);
+  }
+  return version;
+}
+
 /**
  * 获取实际安装的版本
  * @param {*} pkgName 
@@ -274,10 +281,10 @@ function checkPackageUpdate(writeUpdate = false, externalVersions = {}) {
         });
         logger(
           'error',
-          `\x1b[33m▫️\x1B[0m ${pkgName.padEnd(40, ' ')}${pkgVersionInfo.version.padEnd(
+          `\x1b[33m▫️\x1B[0m ${pkgName.padEnd(40, ' ')}${filterVersionPrefix(pkgVersionInfo.version).padEnd(
             8,
             ' '
-          )} => ${latestVersion.padEnd(8, ' ')} (pkg)`
+          )} => ${latestVersion.padEnd(8, ' ')} (only in pkg)`
         );
       }
     } else {
