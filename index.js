@@ -36,14 +36,21 @@ function getReplacedDepenciesVersion(pkgVersion, targetVersion) {
     return pkgVersion;
   }
 
-  if (pkgVersion === 'latest') {
-    return '^' + targetVersion;
+  // ^ 或者 ~ 打头的，保留该符号
+  if (pkgVersion.startsWith('^') || pkgVersion.startsWith('~')) {
+    return `${pkgVersion[0]}${targetVersion}`;
   }
 
-  // 替换掉版本号
-  return pkgVersion.replace(/\d+\.\d+\.\d+/, targetVersion);
+  return targetVersion;
 }
 
+/**
+ * 获取实际安装的版本
+ * @param {*} pkgName 
+ * @param {*} resolveMode 
+ * @param {*} options 
+ * @returns 
+ */
 function getVersion(pkgName, resolveMode = true, options = {}) {
   options.cwd = options.cwd || currentProjectRoot;
   try {
@@ -57,6 +64,22 @@ function getVersion(pkgName, resolveMode = true, options = {}) {
       return require(`${pkgName}/package.json`).version;
     }
   } catch (e) {
+    return undefined;
+  }
+}
+
+function getPkgVersion(pkgJSON, pkgName) {
+  if (pkgJSON['dependencies'] && pkgJSON['dependencies'][pkgName]) {
+    return {
+      version: pkgJSON['dependencies'][pkgName],
+      type: 'dependencies',
+    };
+  } else if (pkgJSON['devDependencies'] && pkgJSON['devDependencies'][pkgName]) {
+    return {
+      version: pkgJSON['devDependencies'][pkgName],
+      type: 'devDependencies',
+    }
+  } else {
     return undefined;
   }
 }
@@ -233,12 +256,30 @@ function checkPackageUpdate(writeUpdate = false, externalVersions = {}) {
       continue;
     }
 
+    // 格式化 version 的版本列表，变为数组形式，从小到大排列
     versions[pkgName] = [].concat(versions[pkgName]);
 
+    // 拿到最新的版本
     const latestVersion = versions[pkgName].pop();
 
     if (latestVersion === version) {
-      // ignore
+      // 如果运行时版本相同，则检查 package.json 中的版本是否相同
+      const pkgVersionInfo = getPkgVersion(pkgJSON, pkgName);
+      if (pkgVersionInfo && !pkgVersionInfo.version.includes(latestVersion)) {
+        fail++;
+        result.push({
+          name: pkgName,
+          current: pkgVersionInfo.version,
+          latestVersion,
+        });
+        logger(
+          'error',
+          `\x1b[33m▫️\x1B[0m ${pkgName.padEnd(40, ' ')}${pkgVersionInfo.version.padEnd(
+            8,
+            ' '
+          )} => ${latestVersion.padEnd(8, ' ')} (pkg)`
+        );
+      }
     } else {
       // fail
       fail++;
