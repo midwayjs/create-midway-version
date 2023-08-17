@@ -130,6 +130,9 @@ function checkVersion(coreVersion, externalVersions) {
       continue;
     }
 
+    // 格式化 version 的版本列表，变为数组形式，从小到大排列
+    versions[pkgName] = [].concat(versions[pkgName]);
+
     if (versions[pkgName].indexOf(version) !== -1) {
       // ok
       logger('info', `\x1B[32m✓\x1B[0m ${pkgName}(${version})`);
