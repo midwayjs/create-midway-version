@@ -1,6 +1,6 @@
 {
   "name": "midway-version",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "description": "Check your midway and component version is matched",
   "main": "index.js",
   "bin": {
