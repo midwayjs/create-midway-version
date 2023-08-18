@@ -172,8 +172,8 @@ function checkVersion(coreVersion, externalVersions) {
 }
 
 // 下载最新的包到 node_modules
-function getLatestPackage(templateUri, baseDir) {
-  let data = runCmd(`npm view ${templateUri} dist-tags --json`);
+function getLatestPackage(templateUri, baseDir, npmClient = 'npm') {
+  let data = runCmd(`${npmClient} view ${templateUri} dist-tags --json`);
   const remoteVersion = JSON.parse(data)['latest'];
 
   function checkoutVersionEquals() {
@@ -190,14 +190,14 @@ function getLatestPackage(templateUri, baseDir) {
     }
     // 如果版本不同，则需要重新安装
     runCmd(
-      `npm pack @midwayjs/version --quiet --pack-destination=${join(
+      `${npmClient} pack @midwayjs/version --quiet --pack-destination=${join(
         baseDir,
         'node_modules'
       )}`
     );
     // 用 install 安装 zip 包
     runCmd(
-      `npm install --quiet --no-save --no-package-lock ${join(
+      `${npmClient} install --quiet --no-save --no-package-lock ${join(
         baseDir,
         'node_modules',
         `midwayjs-version-${remoteVersion}.tgz`
@@ -224,7 +224,7 @@ function checkPackageUpdate(writeUpdate = false, externalVersions = {}) {
   );
   const versionBaseDir = dirname(require.resolve('@midwayjs/version'));
 
-  getLatestPackage('@midwayjs/version', baseDir);
+  getLatestPackage('@midwayjs/version', baseDir, externalVersions.npmClient);
 
   const {
     decorator: decoratorVersion,
@@ -334,7 +334,7 @@ function checkPackageUpdate(writeUpdate = false, externalVersions = {}) {
       );
       if (existsSync(join(currentProjectRoot, 'package-lock.json'))) {
         // 更新 package-lock.json
-        runCmd(`npm install ${pkgVersion.join(' ')} --package-lock-only`, currentProjectRoot);
+        runCmd(`${externalVersions.npmClient} install ${pkgVersion.join(' ')} --package-lock-only`, currentProjectRoot);
         logger('log', '*'.repeat(60));
         logger('log', `>> Write package.json and package-lock.json complete, please re-run install command.`);
         logger('log', '*'.repeat(60));
@@ -394,6 +394,7 @@ function checkUpdate(coreVersion) {
 exports.check = function (output = false, externalVersions = {}) {
   outputConsole = output;
   const coreVersion = getVersion('@midwayjs/core');
+  externalVersions.npmClient = externalVersions.npmClient || 'npm';
 
   if (!coreVersion) {
     outputError('>> Please install @midwayjs/core first');
