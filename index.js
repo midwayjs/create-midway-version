@@ -161,7 +161,7 @@ function checkVersion(coreVersion, externalVersions, options = {}) {
   logger('log', '*'.repeat(50));
   if (fail > 0) {
     logger('log', `>> Check complete, found \x1B[41m ${fail} \x1B[0m problem.`);
-    logger('log', `>> Use \x1B[36m\x1B[1m-u\x1B[0m to show update list, \x1B[36m\x1B[1m-w\x1B[0m to write file.`);
+    logger('log', `>> Use \x1B[36m\x1B[1m-u\x1B[0m to show update list, \x1B[36m\x1B[1m-u -w\x1B[0m to write file.`);
     logger('log', `>> Please check the result above.`);
   } else {
     logger('log', `>> Check complete, all versions are healthy.`);
@@ -355,7 +355,7 @@ function checkPackageUpdate(writeUpdate = false, externalVersions = {}, options 
         'log',
         `>> Check complete, found \x1B[41m${fail}\x1B[0m package can be update.`
       );
-      logger('log', `>> Use \x1B[36m\x1B[1m-w\x1B[0m to write file.`);
+      logger('log', `>> Use \x1B[36m\x1B[1m-u -w\x1B[0m to write file.`);
       logger('log', `>> Please check the result above.`);
     } else {
       logger('log', `>> Check complete, all versions are healthy.`);
