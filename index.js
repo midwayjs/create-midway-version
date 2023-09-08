@@ -10,14 +10,34 @@ let outputConsole = false;
 
 function logger(level, msg) {
   if (outputConsole) {
-    console[level](msg);
+    if (level === 'error') {
+      console.error(`\x1B[31m${msg}\x1B[0m`);
+    } else if (level === 'warn') {
+      console.error(`\x1B[33m${msg}\x1B[0m`);
+    } else {
+      console[level](msg);
+    }
   }
 }
 
+function prettyOutput(messags = [], level = 'log') {
+  let maxLen = 70;
+  messags = Array.isArray(messags) ? messags : [messags];
+  messags.forEach((msg) => {
+    if (msg.length > maxLen) {
+      maxLen = msg.length;
+    }
+  });
+
+  logger('log', '*'.repeat(maxLen));
+  messags.forEach(msg => {
+    logger(level, msg);
+  });
+  logger('log', '*'.repeat(maxLen));
+}
+
 function outputError(err) {
-  logger('log', '*'.repeat(50));
-  logger('error', typeof err === 'string' ? err : err.message);
-  logger('log', '*'.repeat(50));
+  prettyOutput(typeof err === 'string' ? err : err.message, 'error');
 }
 
 function runCmd(cmd, cwd) {
@@ -26,8 +46,11 @@ function runCmd(cmd, cwd) {
       cwd: cwd || process.env.HOME,
     }).toString();
   } catch (err) {
-    outputError(`"${cmd}" run failed, err=${err.message}`);
-    process.exit(1);
+    outputError([
+      `"${cmd}" run failed, please re-run by yourself.`,
+      `err=${err.stdout ? err.stdout.toString() : err.message}`
+    ].join('\n'));
+    process.exit(0);
   }
 }
 
@@ -158,15 +181,18 @@ function checkVersion(coreVersion, externalVersions, options = {}) {
     }
   }
 
-  logger('log', '*'.repeat(50));
   if (fail > 0) {
-    logger('log', `>> Check complete, found \x1B[41m ${fail} \x1B[0m problem.`);
-    logger('log', `>> Use \x1B[36m\x1B[1m-u\x1B[0m to show update list, \x1B[36m\x1B[1m-u -w\x1B[0m to write file.`);
-    logger('log', `>> Please check the result above.`);
+    prettyOutput([
+      `>> Check complete, found \x1B[41m ${fail} \x1B[0m problem.`,
+      `>> Use \x1B[36m\x1B[1m-u\x1B[0m to show update list.`,
+      `>> Use \x1B[36m\x1B[1m-u -w\x1B[0m to write file.`,
+      `>> Please check the result above.`
+    ]);
   } else {
-    logger('log', `>> Check complete, all versions are healthy.`);
+    prettyOutput([
+      `>> Check complete, all versions are healthy.`,
+    ]);
   }
-  logger('log', '*'.repeat(50));
 
   return result;
 }
@@ -212,7 +238,12 @@ function getLatestPackage(templateUri, baseDir, npmClient = 'npm') {
 }
 
 // 检查包是否可以更新到最新版本
-function checkPackageUpdate(writeUpdate = false, externalVersions = {}, options = {}) {
+function checkPackageUpdate(externalVersions = {}, options = {}) {
+  // 启用写入模式
+  const writeUpdate = process.argv.includes('-w');
+  // 包括 pkg 没有的依赖
+  const includePkgNotExists = process.argv.includes('--include-pkg-not-exists');
+
   if (!existsSync(join(currentProjectRoot, 'package.json'))) {
     outputError('>> Package.json not found in current cwd, please check it.');
     return;
@@ -258,12 +289,22 @@ function checkPackageUpdate(writeUpdate = false, externalVersions = {}, options 
     return;
   }
 
+  const pkgDeps = {
+    ...pkgJSON['dependencies'],
+    ...pkgJSON['devDependencies'],
+  };
+
   let fail = 0;
 
   // 把当前的实际依赖的包版本和 versions 文件中的版本进行对比
   for (const pkgName of pkgList) {
     const version = getVersion(pkgName);
     if (!version) {
+      continue;
+    }
+
+    if (!pkgDeps[pkgName] && !includePkgNotExists) {
+      // 如果 package.json 中不存在，则不需要检查
       continue;
     }
 
@@ -277,35 +318,60 @@ function checkPackageUpdate(writeUpdate = false, externalVersions = {}, options 
       // 如果运行时版本相同，则检查 package.json 中的版本是否相同
       const pkgVersionInfo = getPkgVersion(pkgJSON, pkgName);
       if (pkgVersionInfo && !pkgVersionInfo.version.includes(latestVersion)) {
+        // 说明这个依赖是自动升级的，仅需要更新 pkg
         fail++;
         result.push({
           name: pkgName,
           current: pkgVersionInfo.version,
           latestVersion,
         });
-        logger(
-          'error',
-          `\x1b[33m▫️\x1B[0m ${pkgName.padEnd(40, ' ')}${filterVersionPrefix(pkgVersionInfo.version).padEnd(
-            8,
-            ' '
-          )} => ${latestVersion.padEnd(8, ' ')} (only in pkg)`
-        );
+        if (pkgDeps[pkgName]) {
+          // 依赖中存在
+          logger(
+            'error',
+            `\x1b[33m▫️\x1B[0m ${pkgName.padEnd(40, ' ')}${filterVersionPrefix(pkgVersionInfo.version).padEnd(
+              15,
+              ' '
+            )} => ${latestVersion.padEnd(15, ' ')}`
+          );
+        } else {
+          // 依赖中不存在，文字变灰
+          logger(
+            'error',
+            `\x1b[33m▫️\x1B[0m \x1B[2m${pkgName.padEnd(40, ' ')}${filterVersionPrefix(pkgVersionInfo.version).padEnd(
+              15,
+              ' '
+            )} => ${latestVersion} (force include)\x1B[0m`
+          );
+        }
+        
       }
     } else {
-      // fail
+      // 说明这个依赖是 pkg 版本和实际安装的版本都需要升级
       fail++;
       result.push({
         name: pkgName,
         current: version,
         latestVersion,
       });
-      logger(
-        'error',
-        `\x1b[33m▫️\x1B[0m ${pkgName.padEnd(40, ' ')}${version.padEnd(
-          8,
-          ' '
-        )} => ${latestVersion}`
-      );
+      if (pkgDeps[pkgName]) {
+        logger(
+          'error',
+          `\x1b[33m▫️\x1B[0m ${pkgName.padEnd(40, ' ')}${version.padEnd(
+            15,
+            ' '
+          )} => ${latestVersion.padEnd(15, ' ')}`
+        );
+      } else {
+        // 依赖中不存在，文字变灰
+        logger(
+          'error',
+          `\x1b[33m▫️\x1B[0m \x1B[2m${pkgName.padEnd(40, ' ')}${version.padEnd(
+            15,
+            ' '
+          )} => ${latestVersion} (force include)\x1B[0m`
+        );
+      }
     }
   }
 
@@ -314,6 +380,10 @@ function checkPackageUpdate(writeUpdate = false, externalVersions = {}, options 
       const pkgVersion = [];
       // 循环 pkg，设置依赖版本
       for (const pkg of result) {
+        if (!pkgDeps[pkg.name] && !includePkgNotExists) {
+          // 如果 package.json 中不存在，且未配置强制包括不存在的依赖，则不需要更新
+          continue;
+        }
         pkgVersion.push(`${pkg.name}@${pkg.latestVersion}`);
         if (pkgJSON['dependencies'][pkg.name]) {
           pkgJSON['dependencies'][pkg.name] = getReplacedDepenciesVersion(
@@ -335,32 +405,33 @@ function checkPackageUpdate(writeUpdate = false, externalVersions = {}, options 
       if (existsSync(join(currentProjectRoot, 'package-lock.json'))) {
         // 更新 package-lock.json
         runCmd(`${options.npmClient} install ${pkgVersion.join(' ')} --package-lock-only`, currentProjectRoot);
-        logger('log', '*'.repeat(60));
-        logger('log', `>> Write package.json and package-lock.json complete, please re-run install command.`);
-        logger('log', '*'.repeat(60));
+        prettyOutput([
+          `>> Write package.json and package-lock.json complete, please re-run install command.`
+        ]);
       } else {
-        logger('log', '*'.repeat(60));
-        logger('log', `>> Write complete, please re-run install command.`);
-        logger('log', '*'.repeat(60));
+        prettyOutput([
+          `>> Write complete, please re-run install command.`
+        ]);
       }
     } else {
-      logger('log', '*'.repeat(60));
-      logger('log', `>> Check complete, all versions are healthy.`);
-      logger('log', '*'.repeat(60));
+      prettyOutput([
+        `>> Check complete, all versions are healthy.`
+      ]);
     }
   } else {
-    logger('log', '*'.repeat(60));
     if (fail > 0) {
-      logger(
-        'log',
-        `>> Check complete, found \x1B[41m${fail}\x1B[0m package can be update.`
-      );
-      logger('log', `>> Use \x1B[36m\x1B[1m-u -w\x1B[0m to write file.`);
-      logger('log', `>> Please check the result above.`);
+      prettyOutput([
+        `>> Check complete, found \x1B[41m${fail}\x1B[0m package can be update.`,
+        `>> Use \x1B[36m\x1B[1m-u -w\x1B[0m to write file.`,
+        `>> Use \x1B[36m\x1B[1m--include-pkg-not-exists\x1B[0m include dependencies not exists.`,
+        `>> Please check the result above.`
+      ]);
     } else {
-      logger('log', `>> Check complete, all versions are healthy.`);
+      prettyOutput([
+        `>> Check complete, all versions are healthy.`
+        `>> Use \x1B[36m\x1B[1m--include-pkg-not-exists\x1B[0m include dependencies not exists.`,
+      ]);
     }
-    logger('log', '*'.repeat(60));
   }
 
   return result;
@@ -372,20 +443,16 @@ function checkUpdate(coreVersion) {
   // compare coreVersion and midwayVersionPkgVersion with semver version
   // 如果 coreVersion 大于 midwayVersionPkgVersion，则需要更新
   if (compareVersions(coreVersion, midwayVersionPkgVersion) > 0) {
-    logger('log', '*'.repeat(50));
     if (isNpxRun) {
-      logger(
-        'log',
+      prettyOutput([
         `>> Current version is too old, please run "npx clear-npx-cache" by yourself and re-run the command.`
-      );
+      ]);
     } else {
-      logger(
-        'log',
+      prettyOutput([
         `>> Current version is too old, please upgrade dependencies and re-run the command.`
-      );
+      ]);
     }
 
-    logger('log', '*'.repeat(50));
     return false;
   }
   return true;
@@ -406,7 +473,7 @@ exports.check = function (output = false, externalVersions = {}, options = {}) {
   }
 
   if (process.argv.includes('-u')) {
-    checkPackageUpdate(process.argv.includes('-w'), externalVersions, options);
+    checkPackageUpdate(externalVersions, options);
   } else {
     return checkVersion(coreVersion, externalVersions, options);
   }
