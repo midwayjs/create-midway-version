@@ -1,4 +1,4 @@
-const { getPackage, checkPackageUpdate } = require('../index');
+const { checkPackageUpdate } = require('../index');
 
 // getPackage('@midwayjs/version').then(() => {
 //   console.log('done');
