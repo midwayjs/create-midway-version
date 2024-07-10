@@ -4,6 +4,7 @@ const { existsSync, readFileSync, mkdirSync, writeFileSync } = require('fs');
 const { dirname, join } = require('path');
 const { execSync } = require('child_process');
 const { compareVersions, satisfies } = require('compare-versions');
+
 const currentProjectRoot = process.cwd();
 const isNpxRun = __dirname.indexOf(currentProjectRoot === -1);
 let outputConsole = false;
@@ -145,13 +146,11 @@ function getPkgVersion(pkgJSON, pkgName) {
   }
 }
 
-// 普通检查包依赖的版本是否错误
-function checkVersion(coreVersion, externalVersions, options = {}) {
-  const baseDir = dirname(require.resolve('@midwayjs/version'));
+function getVersionFile(coreVersion, decoratorVersion, baseDir) {
+  baseDir = baseDir || dirname(require.resolve('@midwayjs/version'));
   // 新版本 core 和 decorator 的版本应该是一样的
-  const decoratorVersion = getVersion('@midwayjs/decorator') || coreVersion;
-  const result = [];
-  const versionFile = join(
+  decoratorVersion = decoratorVersion || coreVersion;
+  let versionFile = join(
     baseDir,
     `versions/${decoratorVersion.replace(/\./g, '_')}-${coreVersion.replace(
       /\./g,
@@ -160,12 +159,33 @@ function checkVersion(coreVersion, externalVersions, options = {}) {
   );
 
   if (!existsSync(versionFile)) {
+    // 修正一次
+    versionFile = join(
+      baseDir,
+      `versions/${coreVersion.replace(/\./g, '_')}-${coreVersion.replace(
+        /\./g,
+        '_'
+      )}.json`
+    );
+  }
+
+  if (!existsSync(versionFile)) {
     logger('log', '*'.repeat(50));
     logger(
       'error',
       `>> Current version @midwayjs/decorator(${decoratorVersion}) and @midwayjs/core(${coreVersion}) not found in @midwayjs/version, please check it.`
     );
     logger('log', '*'.repeat(50));
+    return;
+  }
+  return versionFile;
+}
+
+// 普通检查包依赖的版本是否错误
+function checkVersion(coreVersion, externalVersions, options = {}) {
+  const result = [];
+  const versionFile = getVersionFile(coreVersion, getVersion('@midwayjs/decorator'));
+  if (!versionFile) {
     return;
   }
 
@@ -307,13 +327,7 @@ function checkPackageUpdate(externalVersions = {}, options = {}) {
   }
 
   const result = [];
-  const versionFile = join(
-    versionBaseDir,
-    `versions/${decoratorVersion.replace(/\./g, '_')}-${coreVersion.replace(
-      /\./g,
-      '_'
-    )}.json`
-  );
+  const versionFile = getVersionFile(coreVersion, decoratorVersion, versionBaseDir);
 
   const text = readFileSync(versionFile, 'utf-8');
   const versions = Object.assign({}, JSON.parse(text), externalVersions);
@@ -503,7 +517,7 @@ function checkPackageUpdate(externalVersions = {}, options = {}) {
       ]);
     } else {
       prettyOutput([
-        `>> Check complete, all versions are healthy.`
+        `>> Check complete, all versions are healthy.`,
         `>> Use \x1B[36m\x1B[1m--include-pkg-not-exists\x1B[0m include dependencies not exists.`,
       ]);
     }
