@@ -4,9 +4,39 @@ const { existsSync, readFileSync, mkdirSync, writeFileSync } = require('fs');
 const { dirname, join } = require('path');
 const { execSync } = require('child_process');
 const { compareVersions, satisfies } = require('compare-versions');
+
 const currentProjectRoot = process.cwd();
 const isNpxRun = __dirname.indexOf(currentProjectRoot === -1);
 let outputConsole = false;
+
+function detectPackageManager() {
+  const userAgent = process.env.npm_config_user_agent;
+
+  if (userAgent) {
+    if (userAgent.includes('pnpm')) {
+        return 'pnpm';
+    } else if (userAgent.includes('npm')) {
+        return 'npm';
+    } else if (userAgent.includes('yarn')) {
+        return 'yarn';
+    }
+  }
+
+  return 'unknown';
+}
+
+// 当前使用的包管理器，npm/pnpm/yarn
+const packageManager = detectPackageManager();
+
+function getPackageLockfile() {
+  if (packageManager === 'npm') {
+    return 'package-lock.json';
+  } else if (packageManager === 'pnpm') {
+    return 'pnpm-lock.yaml';
+  } else if (packageManager === 'yarn') {
+    return 'yarn.lock';
+  }
+}
 
 function logger(level, msg) {
   if (outputConsole) {
@@ -54,14 +84,16 @@ function runCmd(cmd, cwd) {
   }
 }
 
-function getReplacedDepenciesVersion(pkgVersion, targetVersion) {
+function getReplacedDepenciesVersion(pkgVersion, targetVersion, retentionPrefix = true) {
   if (pkgVersion === targetVersion) {
     return pkgVersion;
   }
 
-  // ^ 或者 ~ 打头的，保留该符号
-  if (pkgVersion.startsWith('^') || pkgVersion.startsWith('~')) {
-    return `${pkgVersion[0]}${targetVersion}`;
+  if (retentionPrefix) {
+    // ^ 或者 ~ 打头的，保留该符号
+    if (pkgVersion.startsWith('^') || pkgVersion.startsWith('~')) {
+      return `${pkgVersion[0]}${targetVersion}`;
+    }
   }
 
   return targetVersion;
@@ -114,13 +146,11 @@ function getPkgVersion(pkgJSON, pkgName) {
   }
 }
 
-// 普通检查包依赖的版本是否错误
-function checkVersion(coreVersion, externalVersions, options = {}) {
-  const baseDir = dirname(require.resolve('@midwayjs/version'));
+function getVersionFile(coreVersion, decoratorVersion, baseDir) {
+  baseDir = baseDir || dirname(require.resolve('@midwayjs/version'));
   // 新版本 core 和 decorator 的版本应该是一样的
-  const decoratorVersion = getVersion('@midwayjs/decorator') || coreVersion;
-  const result = [];
-  const versionFile = join(
+  decoratorVersion = decoratorVersion || coreVersion;
+  let versionFile = join(
     baseDir,
     `versions/${decoratorVersion.replace(/\./g, '_')}-${coreVersion.replace(
       /\./g,
@@ -129,12 +159,33 @@ function checkVersion(coreVersion, externalVersions, options = {}) {
   );
 
   if (!existsSync(versionFile)) {
+    // 修正一次
+    versionFile = join(
+      baseDir,
+      `versions/${coreVersion.replace(/\./g, '_')}-${coreVersion.replace(
+        /\./g,
+        '_'
+      )}.json`
+    );
+  }
+
+  if (!existsSync(versionFile)) {
     logger('log', '*'.repeat(50));
     logger(
       'error',
       `>> Current version @midwayjs/decorator(${decoratorVersion}) and @midwayjs/core(${coreVersion}) not found in @midwayjs/version, please check it.`
     );
     logger('log', '*'.repeat(50));
+    return;
+  }
+  return versionFile;
+}
+
+// 普通检查包依赖的版本是否错误
+function checkVersion(coreVersion, externalVersions, options = {}) {
+  const result = [];
+  const versionFile = getVersionFile(coreVersion, getVersion('@midwayjs/decorator'));
+  if (!versionFile) {
     return;
   }
 
@@ -184,8 +235,9 @@ function checkVersion(coreVersion, externalVersions, options = {}) {
   if (fail > 0) {
     prettyOutput([
       `>> Check complete, found \x1B[41m ${fail} \x1B[0m problem.`,
-      `>> Use \x1B[36m\x1B[1m-u\x1B[0m to show update list.`,
-      `>> Use \x1B[36m\x1B[1m-u -w\x1B[0m to write file.`,
+      `>> Use \x1B[36m\x1B[1m-u\x1B[0m to show update list that can be upgraded to the latest version.`,
+      `>> Use \x1B[36m\x1B[1m-m\x1B[0m to show updates that can be upgraded to the most compatible version.`,
+      `>> Use \x1B[36m\x1B[1m-u -w\x1B[0m or \x1B[36m\x1B[1m-m -w\x1B[0m to write to the package.json file and update the lock file if it exists.`,
       `>> Please check the result above.`
     ]);
   } else {
@@ -241,8 +293,14 @@ function getLatestPackage(templateUri, baseDir, npmClient = 'npm') {
 function checkPackageUpdate(externalVersions = {}, options = {}) {
   // 启用写入模式
   const writeUpdate = process.argv.includes('-w');
+  // core 版本
+  const currentCoreVersion = options.coreVersion || getVersion('@midwayjs/core');
   // 包括 pkg 没有的依赖
   const includePkgNotExists = process.argv.includes('--include-pkg-not-exists');
+  // 是否兼容模式
+  const isCompatibleMode = options.mode === 'compatible';
+  // 是否包含 lock 文件
+  const hasLockFile = existsSync(join(currentProjectRoot, getPackageLockfile()));
 
   if (!existsSync(join(currentProjectRoot, 'package.json'))) {
     outputError('>> Package.json not found in current cwd, please check it.');
@@ -257,18 +315,19 @@ function checkPackageUpdate(externalVersions = {}, options = {}) {
 
   getLatestPackage('@midwayjs/version', baseDir, options.npmClient);
 
-  const {
-    decorator: decoratorVersion,
-    core: coreVersion,
-  } = require('@midwayjs/version');
+  let decoratorVersion, coreVersion;
+  if (isCompatibleMode) {
+    // 兼容模式，获取当前依赖中的版本
+    decoratorVersion = getVersion('@midwayjs/decorator');
+    coreVersion = currentCoreVersion;
+  } else {
+    const version = require('@midwayjs/version');
+    decoratorVersion = version.decorator;
+    coreVersion = version.core;
+  }
+
   const result = [];
-  const versionFile = join(
-    versionBaseDir,
-    `versions/${decoratorVersion.replace(/\./g, '_')}-${coreVersion.replace(
-      /\./g,
-      '_'
-    )}.json`
-  );
+  const versionFile = getVersionFile(coreVersion, decoratorVersion, versionBaseDir);
 
   const text = readFileSync(versionFile, 'utf-8');
   const versions = Object.assign({}, JSON.parse(text), externalVersions);
@@ -344,7 +403,6 @@ function checkPackageUpdate(externalVersions = {}, options = {}) {
             )} => ${latestVersion} (force include)\x1B[0m`
           );
         }
-        
       }
     } else {
       // 说明这个依赖是 pkg 版本和实际安装的版本都需要升级
@@ -375,6 +433,15 @@ function checkPackageUpdate(externalVersions = {}, options = {}) {
     }
   }
 
+  if (isCompatibleMode && !hasLockFile && !result.find(r => r.name === '@midwayjs/core')) {
+    // 兼容模式下，如果没有 lock 文件，则需要写死版本，如果上面没处理过 core，这里额外处理 @midwayjs/core
+    result.push({
+      name: '@midwayjs/core',
+      current: currentCoreVersion,
+      latestVersion: currentCoreVersion,
+    });
+  }
+
   if (writeUpdate) {
     if (result.length > 0) {
       const pkgVersion = [];
@@ -385,15 +452,23 @@ function checkPackageUpdate(externalVersions = {}, options = {}) {
           continue;
         }
         pkgVersion.push(`${pkg.name}@${pkg.latestVersion}`);
+
+        /**
+         * 普通模式下，直接写入最新版本，保留原有格式
+         * 兼容模式下，如果有 lock 文件，则保留原有格式，如果没有，则写死版本
+         */
+        const retentionPrefix = isCompatibleMode ? hasLockFile: true;
         if (pkgJSON['dependencies'][pkg.name]) {
           pkgJSON['dependencies'][pkg.name] = getReplacedDepenciesVersion(
             pkgJSON['dependencies'][pkg.name],
-            pkg.latestVersion
+            pkg.latestVersion,
+            retentionPrefix
           );
         } else if (pkgJSON['devDependencies'][pkg.name]) {
           pkgJSON['devDependencies'][pkg.name] = getReplacedDepenciesVersion(
             pkgJSON['devDependencies'][pkg.name],
-            pkg.latestVersion
+            pkg.latestVersion,
+            retentionPrefix
           );
         }
       }
@@ -402,11 +477,25 @@ function checkPackageUpdate(externalVersions = {}, options = {}) {
         join(currentProjectRoot, 'package.json'),
         JSON.stringify(pkgJSON, null, 2)
       );
-      if (existsSync(join(currentProjectRoot, 'package-lock.json'))) {
+
+      if (hasLockFile) {
+        let installCmd;
+        switch (packageManager) {
+          case 'npm':
+            installCmd = `npm install ${pkgVersion.join(' ')} --package-lock-only`;
+            break;
+          case 'pnpm':
+            installCmd = `pnpm install ${pkgVersion.join(' ')} --lockfile-only`;
+            break;
+          case 'yarn':
+            installCmd = `yarn add ${pkgVersion.join(' ')} --ignore-scripts --prefer-offline`;
+            break;
+        }
+
         // 更新 package-lock.json
-        runCmd(`${options.npmClient} install ${pkgVersion.join(' ')} --package-lock-only`, currentProjectRoot);
+        runCmd(installCmd, currentProjectRoot);
         prettyOutput([
-          `>> Write package.json and package-lock.json complete, please re-run install command.`
+          `>> Write package.json and ${getPackageLockfile()} complete, please re-run install command.`
         ]);
       } else {
         prettyOutput([
@@ -422,13 +511,13 @@ function checkPackageUpdate(externalVersions = {}, options = {}) {
     if (fail > 0) {
       prettyOutput([
         `>> Check complete, found \x1B[41m${fail}\x1B[0m package can be update.`,
-        `>> Use \x1B[36m\x1B[1m-u -w\x1B[0m to write file.`,
+        `>> Use \x1B[36m\x1B[1m${isCompatibleMode ? '-m -w' : '-u -w'}\x1B[0m to write to the package.json file and update the lock file if it exists.`,
         `>> Use \x1B[36m\x1B[1m--include-pkg-not-exists\x1B[0m include dependencies not exists.`,
         `>> Please check the result above.`
       ]);
     } else {
       prettyOutput([
-        `>> Check complete, all versions are healthy.`
+        `>> Check complete, all versions are healthy.`,
         `>> Use \x1B[36m\x1B[1m--include-pkg-not-exists\x1B[0m include dependencies not exists.`,
       ]);
     }
@@ -440,13 +529,22 @@ function checkPackageUpdate(externalVersions = {}, options = {}) {
 function checkUpdate(coreVersion) {
   // save version to current dir
   const midwayVersionPkgVersion = getVersion('@midwayjs/version', false);
+  // 是否是 pnpm 目录
+  const isPnpm = existsSync(join(currentProjectRoot, 'node_modules/.pnpm'));
   // compare coreVersion and midwayVersionPkgVersion with semver version
   // 如果 coreVersion 大于 midwayVersionPkgVersion，则需要更新
   if (compareVersions(coreVersion, midwayVersionPkgVersion) > 0) {
     if (isNpxRun) {
-      prettyOutput([
-        `>> Current version is too old, please run "npx clear-npx-cache" by yourself and re-run the command.`
-      ]);
+      if (isPnpm) {
+        // 使用 pnpx 执行当前命令
+        prettyOutput([
+          `>> Please use pnpx to run the command.`,
+        ]);
+      } else {
+        prettyOutput([
+          `>> Current version is too old, please run "npx clear-npx-cache" by yourself and re-run the command.`
+        ]);
+      }
     } else {
       prettyOutput([
         `>> Current version is too old, please upgrade dependencies and re-run the command.`
@@ -473,7 +571,18 @@ exports.check = function (output = false, externalVersions = {}, options = {}) {
   }
 
   if (process.argv.includes('-u')) {
-    checkPackageUpdate(externalVersions, options);
+    // 更新到最新版本
+    checkPackageUpdate(externalVersions, {
+      coreVersion,
+      ...options
+    });
+  } else if (process.argv.includes('-m')) {
+    // 更新到当前可兼容的最新版本
+    checkPackageUpdate(externalVersions, {
+      mode: 'compatible',
+      coreVersion,
+      ...options
+    });
   } else {
     return checkVersion(coreVersion, externalVersions, options);
   }
