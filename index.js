@@ -279,6 +279,8 @@ function checkPackageUpdate(externalVersions = {}, options = {}) {
   const includePkgNotExists = process.argv.includes('--include-pkg-not-exists');
   // 是否兼容模式
   const isCompatibleMode = options.mode === 'compatible';
+  // 是否包含 lock 文件
+  const hasLockFile = existsSync(join(currentProjectRoot, getPackageLockfile()));
 
   if (!existsSync(join(currentProjectRoot, 'package.json'))) {
     outputError('>> Package.json not found in current cwd, please check it.');
@@ -387,7 +389,6 @@ function checkPackageUpdate(externalVersions = {}, options = {}) {
             )} => ${latestVersion} (force include)\x1B[0m`
           );
         }
-        
       }
     } else {
       // 说明这个依赖是 pkg 版本和实际安装的版本都需要升级
@@ -418,6 +419,15 @@ function checkPackageUpdate(externalVersions = {}, options = {}) {
     }
   }
 
+  if (isCompatibleMode && !hasLockFile && !result.find(r => r.name === '@midwayjs/core')) {
+    // 兼容模式下，如果没有 lock 文件，则需要写死版本，如果上面没处理过 core，这里额外处理 @midwayjs/core
+    result.push({
+      name: '@midwayjs/core',
+      current: currentCoreVersion,
+      latestVersion: currentCoreVersion,
+    });
+  }
+
   if (writeUpdate) {
     if (result.length > 0) {
       const pkgVersion = [];
@@ -433,18 +443,18 @@ function checkPackageUpdate(externalVersions = {}, options = {}) {
          * 普通模式下，直接写入最新版本，保留原有格式
          * 兼容模式下，如果有 lock 文件，则保留原有格式，如果没有，则写死版本
          */
-        const hasLockFile = isCompatibleMode ? existsSync(join(currentProjectRoot, getPackageLockfile())): true;
+        const retentionPrefix = isCompatibleMode ? hasLockFile: true;
         if (pkgJSON['dependencies'][pkg.name]) {
           pkgJSON['dependencies'][pkg.name] = getReplacedDepenciesVersion(
             pkgJSON['dependencies'][pkg.name],
             pkg.latestVersion,
-            hasLockFile
+            retentionPrefix
           );
         } else if (pkgJSON['devDependencies'][pkg.name]) {
           pkgJSON['devDependencies'][pkg.name] = getReplacedDepenciesVersion(
             pkgJSON['devDependencies'][pkg.name],
             pkg.latestVersion,
-            hasLockFile
+            retentionPrefix
           );
         }
       }
@@ -454,7 +464,7 @@ function checkPackageUpdate(externalVersions = {}, options = {}) {
         JSON.stringify(pkgJSON, null, 2)
       );
 
-      if (existsSync(join(currentProjectRoot, getPackageLockfile()))) {
+      if (hasLockFile) {
         let installCmd;
         switch (packageManager) {
           case 'npm':
